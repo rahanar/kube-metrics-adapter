@@ -104,7 +104,8 @@ func NewCommandStartAdapterServer(stopCh <-chan struct{}) *cobra.Command {
 		"whether to enable AWS external metrics")
 	flags.StringSliceVar(&o.AWSRegions, "aws-region", o.AWSRegions, "the AWS regions which should be monitored. eg: eu-central, eu-west-1")
 	flags.StringVar(&o.MetricsAddress, "metrics-address", o.MetricsAddress, "The address where to serve prometheus metrics")
-
+	flags.DurationVar(&o.MetricsTTL, "metrics-ttl", 30*time.Second, "TTL for metrics that are stored in in-memory cache.")
+	flags.DurationVar(&o.GCInterval, "garbage-collector-interval", 1*time.Minute, "Interval to clean up metrics that are stored in in-memory cache.")
 	return cmd
 }
 
@@ -214,7 +215,7 @@ func (o AdapterServerOptions) RunCustomMetricsAdapterServer(stopCh <-chan struct
 		collectorFactory.RegisterExternalCollector([]string{collector.AWSSQSQueueLengthMetric}, collector.NewAWSCollectorPlugin(awsSessions))
 	}
 
-	hpaProvider := provider.NewHPAProvider(client, 30*time.Second, 1*time.Minute, collectorFactory)
+	hpaProvider := provider.NewHPAProvider(client, 30*time.Second, 1*time.Minute, collectorFactory, o.MetricsTTL, o.GCInterval)
 
 	go hpaProvider.Run(ctx)
 
@@ -312,4 +313,7 @@ type AdapterServerOptions struct {
 	MetricsAddress string
 	// SkipperBackendWeightAnnotation is the annotation on the ingress indicating the backend weights
 	SkipperBackendWeightAnnotation []string
+
+	MetricsTTL time.Duration
+	GCInterval time.Duration
 }

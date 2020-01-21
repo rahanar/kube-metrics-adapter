@@ -59,6 +59,7 @@ type HPAProvider struct {
 	collectorFactory   *collector.CollectorFactory
 	recorder           kube_record.EventRecorder
 	logger             *log.Entry
+	gcInterval         time.Duration
 }
 
 // metricCollection is a container for sending collected metrics across a
@@ -69,7 +70,8 @@ type metricCollection struct {
 }
 
 // NewHPAProvider initializes a new HPAProvider.
-func NewHPAProvider(client kubernetes.Interface, interval, collectorInterval time.Duration, collectorFactory *collector.CollectorFactory) *HPAProvider {
+func NewHPAProvider(client kubernetes.Interface, interval, collectorInterval time.Duration, collectorFactory *collector.CollectorFactory,
+	metricsTTL time.Duration, gcInterval time.Duration) *HPAProvider {
 	metricsc := make(chan metricCollection)
 
 	return &HPAProvider{
@@ -78,11 +80,12 @@ func NewHPAProvider(client kubernetes.Interface, interval, collectorInterval tim
 		collectorInterval: collectorInterval,
 		metricSink:        metricsc,
 		metricStore: NewMetricStore(func() time.Time {
-			return time.Now().UTC().Add(15 * time.Minute)
+			return time.Now().UTC().Add(metricsTTL)
 		}),
 		collectorFactory: collectorFactory,
 		recorder:         recorder.CreateEventRecorder(client),
 		logger:           log.WithFields(log.Fields{"provider": "hpa"}),
+		gcInterval:       gcInterval,
 	}
 }
 
@@ -215,7 +218,7 @@ func (p *HPAProvider) collectMetrics(ctx context.Context) {
 	go func(ctx context.Context) {
 		for {
 			select {
-			case <-time.After(10 * time.Minute):
+			case <-time.After(p.gcInterval):
 				p.metricStore.RemoveExpired()
 			case <-ctx.Done():
 				p.logger.Info("Stopped metrics store garbage collection.")
